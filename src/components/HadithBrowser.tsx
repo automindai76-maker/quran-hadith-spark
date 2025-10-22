@@ -22,12 +22,15 @@ export const HadithBrowser = () => {
   const { toast } = useToast();
 
   const collections = [
-    { value: "bukhari", label: "Sahih al-Bukhari" },
-    { value: "muslim", label: "Sahih Muslim" },
-    { value: "tirmidhi", label: "Jami' at-Tirmidhi" },
-    { value: "abudawud", label: "Sunan Abu Dawud" },
-    { value: "nasai", label: "Sunan an-Nasa'i" },
-    { value: "ibnmajah", label: "Sunan Ibn Majah" },
+    { value: "bukhari", label: "Sahih al-Bukhari", hadiths: 7563 },
+    { value: "muslim", label: "Sahih Muslim", hadiths: 7190 },
+    { value: "tirmidhi", label: "Jami' at-Tirmidhi", hadiths: 3956 },
+    { value: "abudawud", label: "Sunan Abu Dawud", hadiths: 5274 },
+    { value: "nasai", label: "Sunan an-Nasa'i", hadiths: 5758 },
+    { value: "ibnmajah", label: "Sunan Ibn Majah", hadiths: 4341 },
+    { value: "malik", label: "Muwatta Malik", hadiths: 1594 },
+    { value: "darimi", label: "Sunan ad-Darimi", hadiths: 3367 },
+    { value: "ahmad", label: "Musnad Ahmad", hadiths: 27647 },
   ];
 
   const fetchHadith = async () => {
@@ -86,10 +89,13 @@ export const HadithBrowser = () => {
             <SelectTrigger className="md:w-[240px]">
               <SelectValue placeholder="Select Collection" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[300px]">
               {collections.map((collection) => (
                 <SelectItem key={collection.value} value={collection.value}>
-                  {collection.label}
+                  <div className="flex flex-col">
+                    <span>{collection.label}</span>
+                    <span className="text-xs text-muted-foreground">{collection.hadiths.toLocaleString()} hadiths</span>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
