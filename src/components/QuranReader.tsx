@@ -90,30 +90,51 @@ export const QuranReader = () => {
   const fetchVerse = async (surahNumber: string) => {
     setLoading(true);
     try {
-      const response = await fetch("https://afshi.app.n8n.cloud/webhook-test/afshan", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          type: "quran",
-          surah: surahNumber,
-          verse: "1"
-        }),
+      // Fetch Arabic text
+      const arabicResponse = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}`);
+      const arabicData = await arabicResponse.json();
+      
+      // Fetch English translation
+      const englishResponse = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}/en.asad`);
+      const englishData = await englishResponse.json();
+      
+      // Fetch Urdu translation
+      const urduResponse = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}/ur.ahmedali`);
+      const urduData = await urduResponse.json();
+      
+      // Fetch audio
+      const audioResponse = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}/ar.alafasy`);
+      const audioData = await audioResponse.json();
+
+      if (!arabicData.data || !englishData.data || !urduData.data) {
+        throw new Error("Failed to fetch complete verse data");
+      }
+
+      // Combine all verses
+      const verses = arabicData.data.ayahs.map((ayah: any, index: number) => ({
+        number: ayah.numberInSurah,
+        arabic: ayah.text,
+        english: englishData.data.ayahs[index]?.text || "",
+        urdu: urduData.data.ayahs[index]?.text || "",
+        audio: audioData.data.ayahs[index]?.audio || "",
+      }));
+
+      setVerseData({
+        arabic: verses.map((v: any) => `${v.arabic} ۝${v.number}`).join(" "),
+        urdu: verses.map((v: any) => `(${v.number}) ${v.urdu}`).join(" "),
+        english: verses.map((v: any) => `(${v.number}) ${v.english}`).join(" "),
+        tafsir: `Surah ${arabicData.data.englishName} (${arabicData.data.name}) - ${arabicData.data.englishNameTranslation}. This Surah contains ${arabicData.data.numberOfAyahs} verses and was revealed in ${arabicData.data.revelationType}.`,
+        audio: audioData.data.ayahs[0]?.audio || "",
       });
-
-      if (!response.ok) throw new Error("Failed to fetch verse");
-
-      const data = await response.json();
-      setVerseData(data);
       
       toast({
-        title: "Verse loaded successfully",
-        description: `Surah ${surahNumber} retrieved`,
+        title: "Surah loaded successfully",
+        description: `${arabicData.data.englishName} - ${arabicData.data.numberOfAyahs} verses`,
       });
     } catch (error) {
+      console.error("Error fetching Quran data:", error);
       toast({
-        title: "Error loading verse",
+        title: "Error loading Surah",
         description: "Please check your connection and try again",
         variant: "destructive",
       });
