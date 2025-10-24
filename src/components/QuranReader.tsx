@@ -122,10 +122,6 @@ export const QuranReader = () => {
       const urduResponse = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}/ur.ahmedali`);
       const urduData = await urduResponse.json();
       
-      // Fetch Tafsir (Ibn Kathir in English)
-      const tafsirResponse = await fetch(`https://api.quran.com/api/v4/quran/tafsirs/169?chapter_number=${surahNumber}`);
-      const tafsirData = await tafsirResponse.json();
-      
       // Fetch audio
       const audioResponse = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}/ar.alafasy`);
       const audioData = await audioResponse.json();
@@ -134,13 +130,26 @@ export const QuranReader = () => {
         throw new Error("Failed to fetch complete verse data");
       }
 
+      // Fetch tafsir for each verse from working API
+      const tafsirPromises = arabicData.data.ayahs.map(async (ayah: any) => {
+        try {
+          const response = await fetch(`https://quranapi.pages.dev/api/${surahNumber}/${ayah.numberInSurah}.json`);
+          const data = await response.json();
+          return data.tafsirs?.find((t: any) => t.author === "Ibn Kathir")?.content || "Tafseer not available.";
+        } catch {
+          return "Tafseer not available.";
+        }
+      });
+
+      const tafsirs = await Promise.all(tafsirPromises);
+
       // Combine all verses with tafseer
       const verses = arabicData.data.ayahs.map((ayah: any, index: number) => ({
         number: ayah.numberInSurah,
         arabic: ayah.text,
         english: englishData.data.ayahs[index]?.text || "",
         urdu: urduData.data.ayahs[index]?.text || "",
-        tafseer: tafsirData?.tafsirs?.[index]?.text || "Tafseer not available for this verse.",
+        tafseer: tafsirs[index],
       }));
 
       // Extract all audio URLs
