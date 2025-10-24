@@ -10,7 +10,6 @@ interface Verse {
   arabic: string;
   urdu: string;
   english: string;
-  tafseer: string;
 }
 
 interface VerseData {
@@ -130,26 +129,12 @@ export const QuranReader = () => {
         throw new Error("Failed to fetch complete verse data");
       }
 
-      // Fetch tafsir for each verse from working API
-      const tafsirPromises = arabicData.data.ayahs.map(async (ayah: any) => {
-        try {
-          const response = await fetch(`https://quranapi.pages.dev/api/${surahNumber}/${ayah.numberInSurah}.json`);
-          const data = await response.json();
-          return data.tafsirs?.find((t: any) => t.author === "Ibn Kathir")?.content || "Tafseer not available.";
-        } catch {
-          return "Tafseer not available.";
-        }
-      });
-
-      const tafsirs = await Promise.all(tafsirPromises);
-
-      // Combine all verses with tafseer
+      // Combine all verses
       const verses = arabicData.data.ayahs.map((ayah: any, index: number) => ({
         number: ayah.numberInSurah,
         arabic: ayah.text,
         english: englishData.data.ayahs[index]?.text || "",
         urdu: urduData.data.ayahs[index]?.text || "",
-        tafseer: tafsirs[index],
       }));
 
       // Extract all audio URLs
@@ -375,15 +360,6 @@ export const QuranReader = () => {
                       <p className="text-xs text-muted-foreground mb-1 font-semibold">English Translation</p>
                       <p className="text-base text-foreground leading-relaxed">
                         {verse.english}
-                      </p>
-                    </div>
-                    <div className="bg-secondary/30 p-4 rounded-lg mt-3">
-                      <p className="text-xs text-muted-foreground mb-2 font-semibold flex items-center gap-1">
-                        <BookOpen className="h-3 w-3" />
-                        Tafseer (Explanation)
-                      </p>
-                      <p className="text-sm text-foreground leading-relaxed">
-                        {verse.tafseer}
                       </p>
                     </div>
                   </div>
