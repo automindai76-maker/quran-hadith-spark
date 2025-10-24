@@ -5,12 +5,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Play, Pause, BookOpen, Volume2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-interface VerseData {
+interface Verse {
+  number: number;
   arabic: string;
   urdu: string;
   english: string;
+}
+
+interface VerseData {
+  verses: Verse[];
   tafsir: string;
-  audio?: string;
+  surahInfo: {
+    name: string;
+    englishName: string;
+    englishNameTranslation: string;
+    numberOfAyahs: number;
+    revelationType: string;
+  };
 }
 
 export const QuranReader = () => {
@@ -20,6 +31,8 @@ export const QuranReader = () => {
   const [loading, setLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [currentAyahPlaying, setCurrentAyahPlaying] = useState<number>(0);
+  const [audioUrls, setAudioUrls] = useState<string[]>([]);
   const { toast } = useToast();
 
   const surahs = [
@@ -116,15 +129,22 @@ export const QuranReader = () => {
         arabic: ayah.text,
         english: englishData.data.ayahs[index]?.text || "",
         urdu: urduData.data.ayahs[index]?.text || "",
-        audio: audioData.data.ayahs[index]?.audio || "",
       }));
 
+      // Extract all audio URLs
+      const audios = audioData.data.ayahs.map((ayah: any) => ayah.audio).filter(Boolean);
+      setAudioUrls(audios);
+
       setVerseData({
-        arabic: verses.map((v: any) => `${v.arabic} ۝${v.number}`).join(" "),
-        urdu: verses.map((v: any) => `(${v.number}) ${v.urdu}`).join(" "),
-        english: verses.map((v: any) => `(${v.number}) ${v.english}`).join(" "),
+        verses,
         tafsir: `Surah ${arabicData.data.englishName} (${arabicData.data.name}) - ${arabicData.data.englishNameTranslation}. This Surah contains ${arabicData.data.numberOfAyahs} verses and was revealed in ${arabicData.data.revelationType}.`,
-        audio: audioData.data.ayahs[0]?.audio || "",
+        surahInfo: {
+          name: arabicData.data.name,
+          englishName: arabicData.data.englishName,
+          englishNameTranslation: arabicData.data.englishNameTranslation,
+          numberOfAyahs: arabicData.data.numberOfAyahs,
+          revelationType: arabicData.data.revelationType,
+        },
       });
       
       toast({
@@ -158,38 +178,50 @@ export const QuranReader = () => {
     }
   };
 
+  const playNextAyah = (index: number) => {
+    if (index >= audioUrls.length) {
+      setIsPlaying(false);
+      setCurrentAyahPlaying(0);
+      return;
+    }
+
+    const audio = new Audio(audioUrls[index]);
+    setAudioElement(audio);
+    setCurrentAyahPlaying(index);
+
+    audio.onended = () => {
+      playNextAyah(index + 1);
+    };
+
+    audio.onerror = () => {
+      toast({
+        title: "Audio error",
+        description: `Failed to load audio for ayah ${index + 1}`,
+        variant: "destructive",
+      });
+      playNextAyah(index + 1);
+    };
+
+    audio.play();
+  };
+
   const toggleAudio = () => {
-    if (!verseData?.audio) {
+    if (audioUrls.length === 0) {
       toast({
         title: "Audio not available",
-        description: "This verse does not have audio",
+        description: "This Surah does not have audio",
         variant: "destructive",
       });
       return;
     }
 
-    if (audioElement) {
-      if (isPlaying) {
-        audioElement.pause();
-        setIsPlaying(false);
-      } else {
-        audioElement.play();
-        setIsPlaying(true);
-      }
+    if (audioElement && isPlaying) {
+      audioElement.pause();
+      setIsPlaying(false);
+      setAudioElement(null);
     } else {
-      const audio = new Audio(verseData.audio);
-      audio.onended = () => setIsPlaying(false);
-      audio.onerror = () => {
-        toast({
-          title: "Audio error",
-          description: "Failed to load audio",
-          variant: "destructive",
-        });
-        setIsPlaying(false);
-      };
-      setAudioElement(audio);
-      audio.play();
       setIsPlaying(true);
+      playNextAyah(currentAyahPlaying);
     }
   };
 
@@ -240,30 +272,36 @@ export const QuranReader = () => {
       {verseData && !loading && (
         <div className="space-y-6 animate-slide-in">
           <Card className="p-6 shadow-lg" style={{ boxShadow: "var(--shadow-elegant)" }}>
-            <div className="space-y-6">
-              <div className="text-right">
-                <p className="text-4xl font-arabic leading-loose text-foreground">
-                  {verseData.arabic || "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"}
+            <div className="space-y-4">
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-primary mb-2">
+                  {verseData.surahInfo.englishName}
+                </h2>
+                <p className="text-lg font-arabic text-foreground mb-1">
+                  {verseData.surahInfo.name}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {verseData.surahInfo.englishNameTranslation} • {verseData.surahInfo.numberOfAyahs} Verses • {verseData.surahInfo.revelationType}
                 </p>
               </div>
 
-              <div className="flex gap-2 justify-end">
+              <div className="flex gap-2 justify-center">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={toggleAudio}
                   className="gap-2"
-                  disabled={!verseData.audio}
+                  disabled={audioUrls.length === 0}
                 >
                   {isPlaying ? (
                     <>
                       <Pause className="h-4 w-4" />
-                      Pause
+                      Pause Recitation
                     </>
                   ) : (
                     <>
                       <Play className="h-4 w-4" />
-                      Play Audio
+                      Play Complete Surah
                     </>
                   )}
                 </Button>
@@ -271,26 +309,53 @@ export const QuranReader = () => {
             </div>
           </Card>
 
-          <Card className="p-6 bg-secondary/50">
-            <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
-              <Volume2 className="h-5 w-5 text-primary" />
-              Translations
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <p className="text-xs text-muted-foreground mb-1 font-semibold">Urdu</p>
-                <p className="text-base text-foreground font-arabic text-right leading-relaxed">
-                  {verseData.urdu || "شروع اللہ کے نام سے جو بڑا مہربان نہایت رحم والا ہے"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1 font-semibold">English</p>
-                <p className="text-base text-foreground leading-relaxed">
-                  {verseData.english || "In the name of Allah, the Entirely Merciful, the Especially Merciful."}
-                </p>
-              </div>
-            </div>
-          </Card>
+          <div className="space-y-4">
+            {verseData.verses.map((verse) => (
+              <Card 
+                key={verse.number} 
+                className={`p-6 transition-all ${
+                  isPlaying && currentAyahPlaying === verse.number - 1 
+                    ? 'ring-2 ring-primary shadow-lg' 
+                    : ''
+                }`}
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-semibold">
+                        {verse.number}
+                      </div>
+                      <span className="text-xs text-muted-foreground">Ayah {verse.number}</span>
+                    </div>
+                    {isPlaying && currentAyahPlaying === verse.number - 1 && (
+                      <Volume2 className="h-5 w-5 text-primary animate-pulse" />
+                    )}
+                  </div>
+
+                  <div className="text-right mb-4">
+                    <p className="text-3xl font-arabic leading-loose text-foreground">
+                      {verse.arabic}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 border-t pt-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1 font-semibold">Urdu Translation</p>
+                      <p className="text-base text-foreground font-arabic text-right leading-relaxed">
+                        {verse.urdu}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1 font-semibold">English Translation</p>
+                      <p className="text-base text-foreground leading-relaxed">
+                        {verse.english}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
 
           {verseData.tafsir && (
             <Card className="p-6 bg-card">
