@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,6 +10,7 @@ interface Verse {
   arabic: string;
   urdu: string;
   english: string;
+  tafseer: string;
 }
 
 interface VerseData {
@@ -33,6 +34,7 @@ export const QuranReader = () => {
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [currentAyahPlaying, setCurrentAyahPlaying] = useState<number>(0);
   const [audioUrls, setAudioUrls] = useState<string[]>([]);
+  const [filteredSurahs, setFilteredSurahs] = useState<typeof surahs>([]);
   const { toast } = useToast();
 
   const surahs = [
@@ -100,6 +102,11 @@ export const QuranReader = () => {
     label: `Juz ${i + 1}`,
   }));
 
+  // Initialize filtered surahs
+  useEffect(() => {
+    setFilteredSurahs(surahs);
+  }, []);
+
   const fetchVerse = async (surahNumber: string) => {
     setLoading(true);
     try {
@@ -115,6 +122,10 @@ export const QuranReader = () => {
       const urduResponse = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}/ur.ahmedali`);
       const urduData = await urduResponse.json();
       
+      // Fetch Tafsir (Ibn Kathir in English)
+      const tafsirResponse = await fetch(`https://api.quran.com/api/v4/quran/tafsirs/169?chapter_number=${surahNumber}`);
+      const tafsirData = await tafsirResponse.json();
+      
       // Fetch audio
       const audioResponse = await fetch(`https://api.alquran.cloud/v1/surah/${surahNumber}/ar.alafasy`);
       const audioData = await audioResponse.json();
@@ -123,12 +134,13 @@ export const QuranReader = () => {
         throw new Error("Failed to fetch complete verse data");
       }
 
-      // Combine all verses
+      // Combine all verses with tafseer
       const verses = arabicData.data.ayahs.map((ayah: any, index: number) => ({
         number: ayah.numberInSurah,
         arabic: ayah.text,
         english: englishData.data.ayahs[index]?.text || "",
         urdu: urduData.data.ayahs[index]?.text || "",
+        tafseer: tafsirData?.tafsirs?.[index]?.text || "Tafseer not available for this verse.",
       }));
 
       // Extract all audio URLs
@@ -166,15 +178,20 @@ export const QuranReader = () => {
   const handleSurahChange = (value: string) => {
     setSelectedSurah(value);
     setSelectedJuz("");
+    setFilteredSurahs(surahs);
     fetchVerse(value);
   };
 
   const handleJuzChange = (value: string) => {
     setSelectedJuz(value);
     setSelectedSurah("");
-    const firstSurahInJuz = surahs.find(s => s.juz === parseInt(value));
-    if (firstSurahInJuz) {
-      fetchVerse(firstSurahInJuz.value);
+    const juzNumber = parseInt(value);
+    const surahsInJuz = surahs.filter(s => s.juz === juzNumber);
+    setFilteredSurahs(surahsInJuz);
+    
+    // Load the first surah in this Juz
+    if (surahsInJuz.length > 0) {
+      fetchVerse(surahsInJuz[0].value);
     }
   };
 
@@ -250,7 +267,7 @@ export const QuranReader = () => {
               <SelectValue placeholder="Select a Surah" />
             </SelectTrigger>
             <SelectContent className="max-h-[300px]">
-              {surahs.map((surah) => (
+              {filteredSurahs.map((surah) => (
                 <SelectItem key={surah.value} value={surah.value}>
                   {surah.label}
                 </SelectItem>
@@ -349,6 +366,15 @@ export const QuranReader = () => {
                       <p className="text-xs text-muted-foreground mb-1 font-semibold">English Translation</p>
                       <p className="text-base text-foreground leading-relaxed">
                         {verse.english}
+                      </p>
+                    </div>
+                    <div className="bg-secondary/30 p-4 rounded-lg mt-3">
+                      <p className="text-xs text-muted-foreground mb-2 font-semibold flex items-center gap-1">
+                        <BookOpen className="h-3 w-3" />
+                        Tafseer (Explanation)
+                      </p>
+                      <p className="text-sm text-foreground leading-relaxed">
+                        {verse.tafseer}
                       </p>
                     </div>
                   </div>
