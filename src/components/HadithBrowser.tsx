@@ -13,6 +13,9 @@ interface Hadith {
   hadithNumber: number;
   book: string;
   section?: string;
+  narrator?: string;
+  grade?: string;
+  reference?: string;
 }
 
 export const HadithBrowser = () => {
@@ -34,89 +37,135 @@ export const HadithBrowser = () => {
     { value: "ibnmajah", label: "Sunan Ibn Majah", araEdition: "ara-ibnmajah", engEdition: "eng-ibnmajah", urdEdition: "urd-ibnmajah" },
   ];
 
-  const fetchHadiths = async (startNumber: number = 1) => {
-    if (!selectedCollection) {
-      return;
+const extractNarrator = (text: string): string | undefined => {
+  if (!text) return;
+  const patterns = [
+    /^Narrated\s+([^:：]+):/i,
+    /^It was narrated (?:that )?([^:：]+):/i,
+    /^Reported\s+by\s+([^:：]+):/i,
+    /^From\s+([^:：]+):/i,
+    /^On the authority of\s+([^:：]+):/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m) return m[1].trim();
+  }
+  const idx = text.indexOf(":");
+  if (idx > 0 && idx < 60) return text.slice(0, idx).trim();
+  return undefined;
+};
+
+const fetchHadiths = async () => {
+  if (!selectedCollection) return;
+
+  setLoading(true);
+  setHadiths([]);
+  setCurrentPage(1);
+
+  try {
+    const collection = collections.find((c) => c.value === selectedCollection);
+    if (!collection) return;
+
+    // Load the full editions for Arabic, English, and Urdu to ensure complete, real data
+    const [araResponse, engResponse, urdResponse] = await Promise.all([
+      fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.araEdition}.json`),
+      fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.engEdition}.json`),
+      fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.urdEdition}.json`),
+    ]);
+
+    if (!araResponse.ok || !engResponse.ok || !urdResponse.ok) {
+      throw new Error("Failed to load hadith editions");
     }
 
-    setLoading(true);
-    setHadiths([]);
-    setCurrentPage(1);
+    const [araJson, engJson, urdJson] = await Promise.all([
+      araResponse.json(),
+      engResponse.json(),
+      urdResponse.json(),
+    ]);
 
-    try {
-      const collection = collections.find(c => c.value === selectedCollection);
-      if (!collection) return;
+    const sectionsMap: Record<string, string> = engJson?.metadata?.sections || {};
 
-      // Fetch 20 hadiths starting from startNumber
-      const hadithNumbers = Array.from({ length: 20 }, (_, i) => startNumber + i);
-      const allHadiths: Hadith[] = [];
+    const mapByNumber = (arr: any[] | undefined) => {
+      const m = new Map<number, any>();
+      (arr || []).forEach((h: any) => {
+        if (typeof h?.hadithnumber === "number") m.set(h.hadithnumber, h);
+      });
+      return m;
+    };
 
-      // Fetch Arabic, English, and Urdu editions in parallel for each hadith
-      for (const num of hadithNumbers) {
-        try {
-          const [araResponse, engResponse, urdResponse] = await Promise.all([
-            fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.araEdition}/${num}.json`),
-            fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.engEdition}/${num}.json`),
-            fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.urdEdition}/${num}.json`)
-          ]);
+    const engBy = mapByNumber(engJson?.hadiths);
+    const araBy = mapByNumber(araJson?.hadiths);
+    const urdBy = mapByNumber(urdJson?.hadiths);
 
-          if (araResponse.ok && engResponse.ok && urdResponse.ok) {
-            const [araData, engData, urdData] = await Promise.all([
-              araResponse.json(),
-              engResponse.json(),
-              urdResponse.json()
-            ]);
+    const allNums = Array.from(new Set([...engBy.keys(), ...araBy.keys(), ...urdBy.keys()])).sort((a, b) => a - b);
 
-            allHadiths.push({
-              arabicText: araData.hadith || "",
-              englishText: engData.hadith || "",
-              urduText: urdData.hadith || "",
-              hadithNumber: num,
-              book: collection.label,
-              section: engData.section || ""
-            });
-          }
-        } catch (err) {
-          console.log(`Hadith ${num} not available`);
-        }
-      }
+    const merged: Hadith[] = allNums
+      .map((num) => {
+        const e = engBy.get(num);
+        const a = araBy.get(num);
+        const u = urdBy.get(num);
+        const ref = e?.reference || a?.reference || u?.reference;
+        const grades = (e?.grades || a?.grades || u?.grades || []) as any[];
+        const gradeStr = grades
+          .map((g: any) => g?.grade || g?.name)
+          .filter(Boolean)
+          .join(", ");
+        const sectionTitle = ref?.book != null ? sectionsMap[String(ref.book)] : undefined;
+        return {
+          arabicText: a?.text || "",
+          englishText: e?.text || "",
+          urduText: u?.text || "",
+          hadithNumber: num,
+          book: collection.label,
+          section: sectionTitle || "",
+          narrator: e?.text ? extractNarrator(e.text) : undefined,
+          grade: gradeStr || undefined,
+          reference: ref ? `Book ${ref.book}, Hadith ${ref.hadith}` : undefined,
+        };
+      })
+      .filter((h) => h.arabicText || h.englishText || h.urduText);
 
-      if (allHadiths.length > 0) {
-        setHadiths(allHadiths);
-        toast({
-          title: "Hadiths loaded successfully",
-          description: `Loaded ${allHadiths.length} hadiths from ${collection.label}`,
-        });
-      } else {
-        toast({
-          title: "No hadiths found",
-          description: "Try a different collection or search term",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error("Error fetching Hadiths:", error);
+    if (merged.length > 0) {
+      setHadiths(merged);
       toast({
-        title: "Error loading hadiths",
-        description: "Please try again",
+        title: "Hadiths loaded successfully",
+        description: `Loaded ${merged.length} hadiths from ${collection.label}`,
+      });
+    } else {
+      toast({
+        title: "No hadiths found",
+        description: "Try a different collection or search term",
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
+  } catch (error) {
+    console.error("Error fetching Hadiths:", error);
+    toast({
+      title: "Error loading hadiths",
+      description: "Please try again",
+      variant: "destructive",
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleSearch = () => {
+    fetchHadiths();
   };
 
-  const handleSearch = () => {
-    fetchHadiths(1);
-  };
-
-  const filteredHadiths = hadiths.filter((hadith) => {
+const filteredHadiths = hadiths.filter((hadith) => {
     if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
+    const num = parseInt(q, 10);
+    const isNum = !isNaN(num);
     return (
-      hadith.englishText.toLowerCase().includes(query) ||
+      (isNum && (String(hadith.hadithNumber).includes(q) || hadith.reference?.toLowerCase().includes(q))) ||
+      hadith.englishText.toLowerCase().includes(q) ||
       hadith.arabicText.includes(searchQuery) ||
-      hadith.urduText.includes(searchQuery)
+      hadith.urduText.includes(searchQuery) ||
+      (hadith.narrator?.toLowerCase().includes(q) ?? false) ||
+      (hadith.section?.toLowerCase().includes(q) ?? false)
     );
   });
 
@@ -153,7 +202,7 @@ export const HadithBrowser = () => {
 
           <div className="flex gap-2 flex-1">
             <Input
-              placeholder="Search hadith by keyword..."
+              placeholder="Search by text, number or narrator..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1"
@@ -192,10 +241,20 @@ export const HadithBrowser = () => {
                         {hadith.section}
                       </p>
                     )}
+                    {hadith.reference && (
+                      <p className="text-xs text-muted-foreground">{hadith.reference}</p>
+                    )}
                   </div>
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                    Hadith #{hadith.hadithNumber}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                      Hadith #{hadith.hadithNumber}
+                    </span>
+                    {hadith.grade && (
+                      <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded">
+                        {hadith.grade}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Arabic Text */}
@@ -208,6 +267,13 @@ export const HadithBrowser = () => {
                     <p className="text-right text-xl font-arabic leading-loose text-foreground">
                       {hadith.arabicText}
                     </p>
+                  </div>
+                )}
+
+                {hadith.narrator && (
+                  <div className="bg-secondary/20 p-3 rounded-lg">
+                    <p className="text-xs text-muted-foreground font-semibold mb-1">Narrator</p>
+                    <p className="text-sm text-foreground">{hadith.narrator}</p>
                   </div>
                 )}
 
