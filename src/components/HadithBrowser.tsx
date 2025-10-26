@@ -3,18 +3,16 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, BookMarked, User, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, BookMarked, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface Hadith {
   arabicText: string;
   englishText: string;
-  chapterNumber: number;
-  chapterTitle: string;
+  urduText: string;
   hadithNumber: number;
-  reference: string;
-  narrator?: string;
-  grade?: string;
+  book: string;
+  section?: string;
 }
 
 export const HadithBrowser = () => {
@@ -28,15 +26,15 @@ export const HadithBrowser = () => {
   const hadithsPerPage = 5;
 
   const collections = [
-    { value: "bukhari", label: "Sahih al-Bukhari", apiKey: "bukhari" },
-    { value: "muslim", label: "Sahih Muslim", apiKey: "muslim" },
-    { value: "tirmidhi", label: "Jami' at-Tirmidhi", apiKey: "tirmidhi" },
-    { value: "abudawud", label: "Sunan Abu Dawud", apiKey: "abudawud" },
-    { value: "nasai", label: "Sunan an-Nasa'i", apiKey: "nasai" },
-    { value: "ibnmajah", label: "Sunan Ibn Majah", apiKey: "ibnmajah" },
+    { value: "bukhari", label: "Sahih al-Bukhari", araEdition: "ara-bukhari", engEdition: "eng-bukhari", urdEdition: "urd-bukhari" },
+    { value: "muslim", label: "Sahih Muslim", araEdition: "ara-muslim", engEdition: "eng-muslim", urdEdition: "urd-muslim" },
+    { value: "tirmidhi", label: "Jami' at-Tirmidhi", araEdition: "ara-tirmidhi", engEdition: "eng-tirmidhi", urdEdition: "urd-tirmidhi" },
+    { value: "abudawud", label: "Sunan Abu Dawud", araEdition: "ara-abudawud", engEdition: "eng-abudawud", urdEdition: "urd-abudawud" },
+    { value: "nasai", label: "Sunan an-Nasa'i", araEdition: "ara-nasai", engEdition: "eng-nasai", urdEdition: "urd-nasai" },
+    { value: "ibnmajah", label: "Sunan Ibn Majah", araEdition: "ara-ibnmajah", engEdition: "eng-ibnmajah", urdEdition: "urd-ibnmajah" },
   ];
 
-  const fetchHadiths = async (chapter: number = 1) => {
+  const fetchHadiths = async (startNumber: number = 1) => {
     if (!selectedCollection) {
       return;
     }
@@ -49,36 +47,37 @@ export const HadithBrowser = () => {
       const collection = collections.find(c => c.value === selectedCollection);
       if (!collection) return;
 
-      // Fetch from multiple chapters to get a good collection
-      const chaptersToFetch = [chapter, chapter + 1, chapter + 2];
+      // Fetch 20 hadiths starting from startNumber
+      const hadithNumbers = Array.from({ length: 20 }, (_, i) => startNumber + i);
       const allHadiths: Hadith[] = [];
 
-      for (const chapterNum of chaptersToFetch) {
+      // Fetch Arabic, English, and Urdu editions in parallel for each hadith
+      for (const num of hadithNumbers) {
         try {
-          const response = await fetch(
-            `https://cdn.jsdelivr.net/gh/AhmedBaset/hadith-json@main/db/by_chapter/the_9_books/${collection.apiKey}/${chapterNum}.json`
-          );
+          const [araResponse, engResponse, urdResponse] = await Promise.all([
+            fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.araEdition}/${num}.json`),
+            fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.engEdition}/${num}.json`),
+            fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${collection.urdEdition}/${num}.json`)
+          ]);
 
-          if (response.ok) {
-            const data = await response.json();
-            
-            if (data && data.hadiths && Array.isArray(data.hadiths)) {
-              data.hadiths.forEach((hadith: any) => {
-                allHadiths.push({
-                  arabicText: hadith.ar || hadith.arabicText || "",
-                  englishText: hadith.en || hadith.englishText || "",
-                  chapterNumber: chapterNum,
-                  chapterTitle: data.chapterTitle || data.info?.title || `Chapter ${chapterNum}`,
-                  hadithNumber: hadith.id || hadith.hadithNumber || 0,
-                  reference: hadith.reference || `${collection.label} ${chapterNum}:${hadith.id || 1}`,
-                  narrator: hadith.narrator || "Various narrators",
-                  grade: hadith.grade || (selectedCollection === "bukhari" || selectedCollection === "muslim" ? "Sahih (Authentic)" : "Authenticated"),
-                });
-              });
-            }
+          if (araResponse.ok && engResponse.ok && urdResponse.ok) {
+            const [araData, engData, urdData] = await Promise.all([
+              araResponse.json(),
+              engResponse.json(),
+              urdResponse.json()
+            ]);
+
+            allHadiths.push({
+              arabicText: araData.hadith || "",
+              englishText: engData.hadith || "",
+              urduText: urdData.hadith || "",
+              hadithNumber: num,
+              book: collection.label,
+              section: engData.section || ""
+            });
           }
         } catch (err) {
-          console.log(`Chapter ${chapterNum} not available`);
+          console.log(`Hadith ${num} not available`);
         }
       }
 
@@ -89,22 +88,10 @@ export const HadithBrowser = () => {
           description: `Loaded ${allHadiths.length} hadiths from ${collection.label}`,
         });
       } else {
-        // Fallback to sample data if API fails
-        setHadiths([
-          {
-            arabicText: "إِنَّمَا الْأَعْمَالُ بِالنِّيَّاتِ، وَإِنَّمَا لِكُلِّ امْرِئٍ مَا نَوَى",
-            englishText: "Actions are according to intentions, and everyone will get what was intended.",
-            chapterNumber: 1,
-            chapterTitle: "Revelation",
-            hadithNumber: 1,
-            reference: `${collection.label} 1:1`,
-            narrator: "Umar ibn al-Khattab (رضي الله عنه)",
-            grade: "Sahih (Authentic)",
-          },
-        ]);
         toast({
-          title: "Sample hadith shown",
-          description: "Using sample data - full collection loading coming soon",
+          title: "No hadiths found",
+          description: "Try a different collection or search term",
+          variant: "destructive",
         });
       }
     } catch (error) {
@@ -129,7 +116,7 @@ export const HadithBrowser = () => {
     return (
       hadith.englishText.toLowerCase().includes(query) ||
       hadith.arabicText.includes(searchQuery) ||
-      hadith.chapterTitle.toLowerCase().includes(query)
+      hadith.urduText.includes(searchQuery)
     );
   });
 
@@ -192,17 +179,19 @@ export const HadithBrowser = () => {
       {!loading && currentHadiths.length > 0 && (
         <div className="space-y-4 animate-slide-in">
           {currentHadiths.map((hadith, index) => (
-            <Card key={`${hadith.chapterNumber}-${hadith.hadithNumber}-${index}`} className="p-6 shadow-lg hover:shadow-xl transition-shadow">
+            <Card key={`${hadith.hadithNumber}-${index}`} className="p-6 shadow-lg hover:shadow-xl transition-shadow">
               <div className="space-y-4">
-                {/* Reference and Chapter */}
+                {/* Reference Header */}
                 <div className="flex items-center justify-between border-b pb-2">
                   <div>
                     <p className="text-xs text-muted-foreground font-semibold">
-                      {collections.find(c => c.value === selectedCollection)?.label}
+                      {hadith.book}
                     </p>
-                    <p className="text-sm font-semibold text-primary">
-                      {hadith.chapterTitle}
-                    </p>
+                    {hadith.section && (
+                      <p className="text-sm font-semibold text-primary">
+                        {hadith.section}
+                      </p>
+                    )}
                   </div>
                   <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
                     Hadith #{hadith.hadithNumber}
@@ -212,6 +201,10 @@ export const HadithBrowser = () => {
                 {/* Arabic Text */}
                 {hadith.arabicText && (
                   <div className="bg-secondary/30 p-4 rounded-lg">
+                    <p className="text-xs text-muted-foreground font-semibold mb-2 flex items-center gap-1">
+                      <BookMarked className="h-3 w-3" />
+                      Arabic (العربية)
+                    </p>
                     <p className="text-right text-xl font-arabic leading-loose text-foreground">
                       {hadith.arabicText}
                     </p>
@@ -220,8 +213,8 @@ export const HadithBrowser = () => {
 
                 {/* English Translation */}
                 {hadith.englishText && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground font-semibold flex items-center gap-1">
+                  <div className="bg-secondary/20 p-4 rounded-lg">
+                    <p className="text-xs text-muted-foreground font-semibold mb-2 flex items-center gap-1">
                       <BookMarked className="h-3 w-3" />
                       English Translation
                     </p>
@@ -231,18 +224,18 @@ export const HadithBrowser = () => {
                   </div>
                 )}
 
-                {/* Narrator and Grade */}
-                <div className="flex flex-wrap items-center gap-4 pt-3 border-t">
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">
-                      {hadith.narrator}
-                    </span>
+                {/* Urdu Translation */}
+                {hadith.urduText && (
+                  <div className="bg-secondary/20 p-4 rounded-lg">
+                    <p className="text-xs text-muted-foreground font-semibold mb-2 flex items-center gap-1">
+                      <BookMarked className="h-3 w-3" />
+                      Urdu Translation (اردو)
+                    </p>
+                    <p className="text-right text-lg font-arabic leading-loose text-foreground">
+                      {hadith.urduText}
+                    </p>
                   </div>
-                  <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-primary/20 text-primary">
-                    {hadith.grade}
-                  </span>
-                </div>
+                )}
               </div>
             </Card>
           ))}
